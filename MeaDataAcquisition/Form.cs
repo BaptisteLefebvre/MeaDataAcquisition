@@ -26,7 +26,7 @@ namespace MeaDataAcquisition
         private bool[] selected_channels = null; // TODO understand MCS black magic.
         private int queue_size = 0; // TODO understand MCS black magic.
         private int threshold = 0; // TODO understand MCS black magic.
-        private CMcsUsbDacqNet.SampleSize sample_size = CMcsUsbDacqNet.SampleSize.Size16; // TODO understand MCS black magic.
+        private SampleSizeNet sample_size = SampleSizeNet.SampleSize16Unsigned; // TODO understand MCS black magic.
 
         private bool backupEnabled = false;
         private string dataBackupFilename = null;
@@ -80,11 +80,6 @@ namespace MeaDataAcquisition
                 var item = deviceName + " / " + serialNumber;
                 comboBoxMeaDevices.Items.Add(item);
             }
-            // TODO remove the following block.
-            //{
-            //    comboBoxMeaDevices.Items.Add("MEA #1");
-            //    comboBoxMeaDevices.Items.Add("MEA #2");
-            //}
         }
 
         // Occurs when the value of the selected index of the combo box (i.e. the seleted MEA device) changes.
@@ -94,42 +89,48 @@ namespace MeaDataAcquisition
             // TODO understand MCS black magic.
             usb = usbList.GetUsbListEntry(index);
             // TODO understand MCS black magic.
-            device = new CMeaDeviceNet(usb.BusType, ChannelDataCallback, ErrorCallback);
+            device = new CMeaDeviceNet(usb.DeviceId.BusType, ChannelDataCallback, ErrorCallback);
             // Establish a connection to the required DAQ device.
             device.Connect(usb);
             // TODO understand MCS black magic.
             device.SendStop();
             // TODO understand MCS black magic.
-            var HardwareInfo = device.HWInfo();
+            var hardwareInfo = device.HWInfo();
             // Get the number of available analog hardware channels.
-            HardwareInfo.GetNumberOfHWADCChannels(out nb_channels);
+            hardwareInfo.GetNumberOfHWADCChannels(out nb_channels);
             // Set the number of analog hardware channels to the maximum.
             device.SetNumberOfChannels(nb_channels);
             // Update the text box which displays the number of analog hardware channels.
             textBoxNumberOfChannels.Text = nb_channels.ToString();
             // TODO understand MCS black magic.
-            //HardwareInfo.GetAvailableSampleRates(out List<int> sample_rates);
+            //hardwareInfo.GetAvailableSampleRates(out List<int> sample_rates);
             sample_rate = 20000;
             // TODO understand MCS black magic.
-            device.SetSampleRate(sample_rate);
+            var oversample = (uint) 1;
+            var virtualDevice = 0;
+            device.SetSampleRate(sample_rate, oversample, virtualDevice);
             textBoxSampleRate.Text = sample_rate.ToString();
             // TODO understand MCS black magic.
-            device.GetGain(out gain);
+            gain = device.GetGain();
             textBoxGain.Text = gain.ToString();
             // TODO understand MCS black magic.
-            //HardwareInfo.GetAvailableVoltageRangesInMicroVoltAndStringsInMilliVolt(out List<CMcsUsbDacqNet.CHWInfo.CVoltageRangeInfoNet> voltage_ranges);
+            //hardwareInfo.GetAvailableVoltageRangesInMicroVoltAndStringsInMilliVolt(out List<CMcsUsbDacqNet.CHWInfo.CVoltageRangeInfoNet> voltage_ranges);
             //var voltage_range = 10;
             // TODO understand MCS black magic.
-            //Device.SetVoltageRangeInMicroVolt(voltage_range);
+            //device.SetVoltageRangeInMicroVolt(voltage_range);
             // TODO understand MCS black magic.
-            device.EnableDigitalIn(false);
+            device.EnableDigitalIn(true, virtualDevice);
             // TODO understand MCS black magic.
-            device.EnableChecksum(false);
+            device.EnableChecksum(true, virtualDevice);
             // TODO understand MCS black magic.
-            //Device.EnableTimestamp(false);
+            //device.EnableTimestamp(false);
             // TODO understand MCS black magic.
-            //Device.GetChannelLayout(out int analog_channels, out int digital_channels, out int checksum_channels, out int timestamp_channels, out int channels_in_block);
-            device.GetChannelsInBlock(out channels_in_block);
+            int analog_channels;
+            int digital_channels;
+            int checksum_channels;
+            int timestamp_channels;
+            device.GetChannelLayout(out analog_channels, out digital_channels, out checksum_channels, out timestamp_channels, out channels_in_block, (uint)virtualDevice);
+            channels_in_block = device.GetChannelsInBlock();
             textBoxChannelsInBlock.Text = channels_in_block.ToString();
             // ...
             selected_channels = new bool[channels_in_block];
@@ -138,15 +139,18 @@ namespace MeaDataAcquisition
                 selected_channels[i] = true;
             }
             // TODO check the value of the buffer size.
-            buf_size = sample_rate / 100;
+            buf_size = sample_rate / 10;
+            //buf_size = sample_rate / 100;
             queue_size = 10 * buf_size;
             textBoxQueueSize.Text = queue_size.ToString();
             // ...
             threshold = buf_size;
             textBoxThreshold.Text = threshold.ToString();
             // ...
-            sample_size = CMcsUsbDacqNet.SampleSize.Size16;
+            sample_size = SampleSizeNet.SampleSize16Unsigned;
             textBoxSampleSize.Text = sample_size.ToString();
+            // TODO understand MCS black magic.
+            device.ChannelBlock_SetCheckChecksum((uint)checksum_channels, (uint)timestamp_channels);
             // Enable control.
             textBoxQueueSize.Enabled = true;
             textBoxThreshold.Enabled = true;
@@ -237,8 +241,13 @@ namespace MeaDataAcquisition
             buf_acq_nb = 0;
             // Update the display of the number of acquired buffers.
             textBoxBufferAcquired.Text = buf_acq_nb.ToString();
-            // Start data acquisition.
-            device.StartDacq();
+            // Start the data acquisition thread and sampling.
+            var timeout = 150; // ms
+            var numSubmittedUsbBuffers = 100;
+            var numUsbBuffers = 300;
+            var packetsInUrb = 5;
+            device.StartDacq(timeout, numSubmittedUsbBuffers, numUsbBuffers, packetsInUrb);
+            //device.StartDacq()
             // Enable controls.
             buttonStop.Enabled = true;
             groupBoxDataBackup.Enabled = true;
