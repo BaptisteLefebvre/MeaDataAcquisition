@@ -1,1 +1,0 @@
-﻿Data acquisition application for the USB-MEA256-System by Multi Channel Systems GmbH.
