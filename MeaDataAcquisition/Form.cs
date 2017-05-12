@@ -1,5 +1,6 @@
 ﻿using Mcs.Usb;
 using System;
+using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.IO;
 using System.Net;
@@ -14,14 +15,15 @@ namespace MeaDataAcquisition
         private BackgroundWorker dataBackupWorker;
         private BackgroundWorker dataBroadcastWorker;
 
+        private BlockingCollection<ushort[]> dataBackupBuffer = new BlockingCollection<ushort[]>();
+        private BlockingCollection<ushort[]> dataBroadcastBuffer = new BlockingCollection<ushort[]>();
+
         private CMcsUsbListNet usbList = new CMcsUsbListNet(); // TODO understand MCS black magic.
         private CMcsUsbListEntryNet usb = null; // TODO understand MCS black magic.
         private CMeaDeviceNet device = null; // TODO understand MCS black magic.
 
         private int buf_size = 0;
         private int buf_acq_nb = 0; // number of acquired buffers
-        private int buf_bck_nb = 0; // number of backuped buffers
-        private int buf_brd_nb = 0; // number of broadcasted buffers
 
         private int nb_channels = 0; // TODO understand MCS black magic.
         private int sample_rate = 0; // TODO understand MCS black magic.
@@ -32,14 +34,11 @@ namespace MeaDataAcquisition
         private int threshold = 0; // TODO understand MCS black magic.
         private SampleSizeNet sample_size = SampleSizeNet.SampleSize16Unsigned; // TODO understand MCS black magic.
 
-        private bool backupEnabled = false;
         private string dataBackupFilename = null;
-        private BinaryWriter dataBackupWriter = null;
 
-        private bool broadcastEnabled = false;
-        private UdpClient udpClient = null;
         private int udpClientPort = 40005;
         private string udpClientHostname = IPAddress.Broadcast.ToString();
+        private IPAddress udpClientIPAddress = IPAddress.Parse("192.168.10.101");
 
 
         public Form()
@@ -55,6 +54,7 @@ namespace MeaDataAcquisition
         private void InitializeDataAcquisitionWorker()
         {
             this.dataAcquisitionWorker = new BackgroundWorker();
+            this.dataAcquisitionWorker.WorkerSupportsCancellation = true;
             this.dataAcquisitionWorker.DoWork += new DoWorkEventHandler(dataAcquisitionWorker_DoWork);
         }
 
@@ -67,12 +67,13 @@ namespace MeaDataAcquisition
             e.Result = AcquireData(worker, e);
         }
 
+        // TODO manage cancellation.
         private int AcquireData(BackgroundWorker worker, DoWorkEventArgs e)
         {
             var result = 0;
             
             // TODO understand MCS black magic.
-            device.SetSelectedData(selected_channels, queue_size, threshold, sample_size, channels_in_block);
+            this.device.SetSelectedData(selected_channels, queue_size, threshold, sample_size, channels_in_block);
             // Update the number of acquired buffers.
             buf_acq_nb = 0;
             // Update the display of the number of acquired buffers.
@@ -82,23 +83,29 @@ namespace MeaDataAcquisition
             var numSubmittedUsbBuffers = 100;
             var numUsbBuffers = 300;
             var packetsInUrb = 8;
-            device.StartDacq(timeout, numSubmittedUsbBuffers, numUsbBuffers, packetsInUrb);
+            this.device.StartDacq(timeout, numSubmittedUsbBuffers, numUsbBuffers, packetsInUrb);
             //device.StartDacq();
-
+            
             while (true)
             {
                 if (worker.CancellationPending)
                 {
-                    // Abort the operation if the user has canceled.
+                    // Stop data acquisition operation.
+                    try
+                    {
+                        // TODO understand MCS black magic.
+                        this.device.StopDacq();
+                    }
+                    catch (CUsbExceptionNet cUsbExceptionNet)
+                    {
+                        // Log exception.
+                        textBoxLog.Text += cUsbExceptionNet.ToString() + "\r\n";
+                    }
                     e.Cancel = true;
                     break;
                 }
-                else
-                {
-                    // TODO acquire data.
-                    throw new NotImplementedException();
-                }
             }
+
             return result;
         }
 
@@ -107,6 +114,7 @@ namespace MeaDataAcquisition
         private void InitializeDataBackupWorker()
         {
             this.dataBackupWorker = new BackgroundWorker();
+            this.dataBackupWorker.WorkerSupportsCancellation = true;
             this.dataBackupWorker.DoWork += new DoWorkEventHandler(dataBackupWorker_DoWork);
         }
 
@@ -121,8 +129,39 @@ namespace MeaDataAcquisition
 
         private object BackupData(BackgroundWorker worker, DoWorkEventArgs e)
         {
-            // TODO complete.
-            throw new NotImplementedException();
+            var result = 0;
+
+            // Update the number of backuped buffers.
+            var buf_bck_nb = 0;
+            // Update the display of the number of broadcasted buffers.
+            this.textBoxBufferAcquired.Text = buf_bck_nb.ToString();
+            // Create backup file.
+            var dataBackupFile = File.Open(dataBackupFilename, FileMode.Create);
+            // Create backup writer.
+            var dataBackupWriter = new BinaryWriter(dataBackupFile);
+
+            while (true)
+            {
+                if (worker.CancellationPending)
+                {
+                    e.Cancel = true;
+                    break;
+                }
+                else
+                {
+                    ushort[] data = dataBackupBuffer.Take();
+                    var bytes_nb = 2 * data.Length;
+                    byte[] buffer = new byte[bytes_nb];
+                    Buffer.BlockCopy(data, 0, buffer, 0, bytes_nb);
+                    dataBackupWriter.Write(buffer);
+                    // Update the number of backuped buffers.
+                    buf_bck_nb = buf_bck_nb + 1;
+                    // Update the display of the number of backuped buffers.
+                    this.textBoxBufferBackuped.Text = buf_bck_nb.ToString();
+                }
+            }
+
+            return result;
         }
 
 
@@ -130,6 +169,7 @@ namespace MeaDataAcquisition
         private void InitializeDataBroadcastWorker()
         {
             this.dataBroadcastWorker = new BackgroundWorker();
+            this.dataBroadcastWorker.WorkerSupportsCancellation = true;
             this.dataBroadcastWorker.DoWork += new DoWorkEventHandler(dataBroadcastWorker_DoWork);
         }
 
@@ -142,10 +182,73 @@ namespace MeaDataAcquisition
             e.Result = BroadcastData(worker, e);
         }
 
-        private object BroadcastData(BackgroundWorker worker, DoWorkEventArgs e)
+        private int BroadcastData(BackgroundWorker worker, DoWorkEventArgs e)
         {
-            // TODO complete.
-            throw new NotImplementedException();
+            var result = 0;
+
+            // Update the number of broadcasted buffers.
+            var buf_brd_nb = 0;
+            // Update the display of the number of broadcasted buffer.
+            textBoxBufferAcquired.Text = buf_brd_nb.ToString();
+            // Create UDP client.
+            var udpClient = new UdpClient(udpClientPort);
+            // Adjust buffer size.
+            udpClient.Client.SendBufferSize = buf_size;
+            // TODO check if the previous line is valid.
+            // Connect to the requested host.
+            udpClient.Connect(udpClientIPAddress, udpClientPort);
+
+            while (true)
+            {
+                if (worker.CancellationPending)
+                {
+                    // Close UDP client.
+                    udpClient.Close();
+                    // Destroy UDP client.
+                    udpClient = null;
+                    // TODO check if UDP client is correctly deleted.
+
+                    e.Cancel = true;
+                    break;
+                }
+                else
+                {
+                    ushort[] data = dataBroadcastBuffer.Take();
+                    var method = new SendChannelDataDelegate(SendChannelData);
+                    var arguments = new object[2];
+                    arguments[0] = udpClient;
+                    arguments[1] = data;
+                    BeginInvoke(method, arguments);
+                    // Update the number of broadcasted buffers.
+                    buf_brd_nb = buf_brd_nb + 1;
+                    // Update the display of the number of broadcasted buffers.
+                    this.textBoxBufferBroadcasted.Text = buf_brd_nb.ToString();
+                }
+            }
+
+            return result;
+        }
+
+        private delegate void SendChannelDataDelegate(UdpClient udpClient, ushort[] data);
+
+        private void SendChannelData(UdpClient udpClient, ushort[] data)
+        {
+            // Send UDP datagram.
+            //var nb_bytes = 2 * data.Length;
+            var nb_bytes = 2 * 256;
+            // Log the size of the UDP datagram.
+            this.textBoxLog.Text += nb_bytes.ToString() + " bytes\r\n";
+            var datagram = new byte[nb_bytes];
+            Buffer.BlockCopy(data, 0, datagram, 0, nb_bytes);
+            try
+            {
+                udpClient.Send(datagram, nb_bytes);
+            }
+            catch (SocketException socketException)
+            {
+                this.textBoxLog.Text += "SocketException\r\n";
+                this.textBoxLog.Text += socketException.ToString() + "\r\n";
+            }
         }
 
 
@@ -155,9 +258,9 @@ namespace MeaDataAcquisition
             // Initialize the combo box which lists all the MEA devices.
             ComboBoxMeaDevices_Initialize();
             // Select the only one MEA device listed by the combo box (id possible).
-            if (comboBoxMeaDevices.Items.Count == 1)
+            if (this.comboBoxMeaDevices.Items.Count == 1)
             {
-                comboBoxMeaDevices.SelectedIndex = 0;
+                this.comboBoxMeaDevices.SelectedIndex = 0;
             }
             // Initialize the text box which shows the hostname targeted by the UDP client.
             TextBoxDataBroadcastHostname_Initialize();
@@ -264,49 +367,6 @@ namespace MeaDataAcquisition
             buttonDataAcquisitionStart.Enabled = true;
         }
 
-        // TODO remove member function for the old DLL version.
-        //void ChannelDataCallback(CMcsUsbDacqNet UsbDacq, int cb_handle, int num_frames)
-        //{
-        //    // Read raw data.
-        //    var handle = 0;
-        //    var frames = buf_size;
-        //    int frames_ret;
-        //    ushort[] channelData = device.ChannelBlock_ReadFramesUI16(handle, frames, out frames_ret);
-        //    // or
-        //    // ushort[] buffer = null;
-        //    // int frames_pos = 0;
-        //    // device.ChannelBlock_ReadFramesUI16(handle, buffer, frames_pos, frames, out frames_ret);
-        //    // Update the number of acquired buffers.
-        //    buf_acq_nb = buf_acq_nb + 1;
-        //    // Update the display of the number of acquired buffers.
-        //    textBoxBufferAcquired.Text = buf_acq_nb.ToString();
-        //    // Save raw data.
-        //    if (backupEnabled)
-        //    {
-        //        for (var i = 0; i < channelData.Length; i++)
-        //        {
-        //            dataBackupWriter.Write(channelData[i]);
-        //            // TODO use one delegate?
-        //        }
-        //        // Update the number of backuped buffers.
-        //        buf_bck_nb = buf_bck_nb + 1;
-        //        // Update the display of the number of backuped buffers.
-        //        textBoxBufferBackuped.Text = buf_bck_nb.ToString();
-        //    }
-        //    // Send raw data.
-        //    if (broadcastEnabled)
-        //    {
-        //        var method = new SendChannelDataDelegate(SendChannelData);
-        //        var arguments = new object[1];
-        //        arguments[0] = channelData;
-        //        BeginInvoke(method, arguments);
-        //        // Update the number of broadcasted buffers.
-        //        buf_brd_nb = buf_brd_nb + 1;
-        //        // Update the display of the number of broadcasted buffers.
-        //        textBoxBufferBroadcasted.Text = buf_brd_nb.ToString();
-        //    }
-        //}
-
         // TODO polish member function for the new DLL version.
         void ChannelDataCallback(CMcsUsbDacqNet UsbDacq, int cb_handle, int num_frames)
         {
@@ -328,48 +388,18 @@ namespace MeaDataAcquisition
             buf_acq_nb = buf_acq_nb + 1;
             // Update the display of the number of acquired buffers.
             textBoxBufferAcquired.Text = buf_acq_nb.ToString();
-            // TODO understand MCS black magic.
-            //for (int i = 0; i < totalChannels; i++)
-            //{
-            //    ushort[] data_tmp = new ushort[frames_ret];
-            //    for (int j = 0; j < frames_ret; j++)
-            //    {
-            //        data_tmp[j] = data[j * channels_in_block + i];
-            //    }
-            //}
-            // Backup raw data.
-            if (backupEnabled)
+            // Send data to backup if necessary.
+            if (dataBackupWorker.IsBusy)
             {
-                throw new NotImplementedException();
+                dataBackupBuffer.Add(data);
             }
-            // Broadcast raw data.
-            if (broadcastEnabled)
+            // Send data to broadcast if necessary.
+            if (dataBroadcastWorker.IsBusy)
             {
-                throw new NotImplementedException();
+                dataBroadcastBuffer.Add(data);
             }
         }
         
-        private delegate void SendChannelDataDelegate(ushort[] channelData);
-
-        private void SendChannelData(ushort[] channelData)
-        {
-            // Send UDP datagram.
-            var nb_bytes = channelData.Length;
-            // Log the size of the UDP datagram.
-            textBoxLog.Text += nb_bytes.ToString() + " bytes\r\n";
-            var datagram = new byte[nb_bytes];
-            Buffer.BlockCopy(channelData, 0, datagram, 0, channelData.Length);
-            try
-            {
-                udpClient.Send(datagram, nb_bytes, udpClientHostname, udpClientPort);
-            }
-            catch (SocketException socketException)
-            {
-                textBoxLog.Text += "SocketException\r\n";
-                textBoxLog.Text += socketException.ToString() + "\r\n";
-            }
-        }
-
         void ErrorCallback(string message, int action)
         {
             // throw new NotImplementedException();
@@ -386,7 +416,7 @@ namespace MeaDataAcquisition
             textBoxThreshold.Enabled = false;
             buttonDataAcquisitionStart.Enabled = false;
             // Start asynchronously the data acquisition operation.
-            dataAcquisitionWorker.RunWorkerAsync();
+            this.dataAcquisitionWorker.RunWorkerAsync();
             //dataAcquisitionWorker.RunWorkerAsync(argument);
             // Enable controls.
             buttonStop.Enabled = true;
@@ -401,17 +431,8 @@ namespace MeaDataAcquisition
             groupBoxDataBroadcast.Enabled = false;
             groupBoxDataBackup.Enabled = false;
             buttonStop.Enabled = false;
-            // Stop data acquisition.
-            try
-            {
-                // TODO understand MCS black magic.
-                device.StopDacq();
-            }
-            catch (CUsbExceptionNet cUsbExceptionNet)
-            {
-                // TODO check that the data acquisition is really stopped.
-                textBoxLog.Text += cUsbExceptionNet.ToString() + "\r\n";
-            }
+            // Stop asynchronously the data acquisition operation.
+            this.dataAcquisitionWorker.CancelAsync();
             // Enable controls.
             buttonDataAcquisitionStart.Enabled = true;
             textBoxThreshold.Enabled = true;
@@ -457,16 +478,8 @@ namespace MeaDataAcquisition
             // Disable control.
             buttonDataBackupStart.Enabled = false;
             buttonDataBackupBrowse.Enabled = false;
-            // Update the number of backuped buffers.
-            buf_bck_nb = 0;
-            // Update the display of the number of broadcasted buffers.
-            textBoxBufferAcquired.Text = buf_bck_nb.ToString();
-            // Create backup file.
-            var dataBackupFile = File.Open(dataBackupFilename, FileMode.Create);
-            // Create backup writer.
-            dataBackupWriter = new BinaryWriter(dataBackupFile);
-            // Turn on backup flag.
-            backupEnabled = true;
+            // Start asynchronously the data backup operation.
+            this.dataBackupWorker.RunWorkerAsync();
             // Enable control.
             buttonDataBackupStop.Enabled = true;
         }
@@ -476,8 +489,8 @@ namespace MeaDataAcquisition
         {
             // Disable control.
             buttonDataBackupStop.Enabled = false;
-            // Turn off backup flag.
-            backupEnabled = false;
+            // Stop asynchronously the data backup operation.
+            this.dataBackupWorker.CancelAsync();
             // Enable control.
             buttonDataBackupBrowse.Enabled = true;
             buttonDataBackupStart.Enabled = true;
@@ -498,17 +511,8 @@ namespace MeaDataAcquisition
         {
             // Disable controls.
             buttonDataBroadcastStart.Enabled = false;
-            // Update the number of broadcasted buffers.
-            buf_brd_nb = 0;
-            // Update the display of the number of broadcasted buffer.
-            textBoxBufferAcquired.Text = buf_brd_nb.ToString();
-            // Create UDP client.
-            udpClient = new UdpClient(udpClientPort);
-            // Adjust buffer size.
-            udpClient.Client.SendBufferSize = buf_size;
-            // TODO check if the previous line is valid.
-            // Turn on broadcast flag.
-            broadcastEnabled = true;
+            // Start asynchronously the data broadcast operation.
+            this.dataBroadcastWorker.RunWorkerAsync();
             // Enable control.
             buttonDataBroadcastStop.Enabled = true;
         }
@@ -518,13 +522,8 @@ namespace MeaDataAcquisition
         {
             // Disable control.
             buttonDataBroadcastStop.Enabled = false;
-            // Close UDP client.
-            udpClient.Close();
-            // Destroy UDP client.
-            udpClient = null;
-            // TODO check if UDP client is correctly deleted.
-            // Turn off broadcast flag.
-            broadcastEnabled = false;
+            // Stop asynchronously the data broadcast operation.
+            this.dataBroadcastWorker.CancelAsync();
             // Enable controls.
             buttonDataBroadcastStart.Enabled = true;
         }
