@@ -1,6 +1,6 @@
 ﻿using Mcs.Usb;
 using System;
-using System.Diagnostics;
+using System.ComponentModel;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -10,6 +10,10 @@ namespace MeaDataAcquisition
 {
     public partial class Form : System.Windows.Forms.Form
     {
+        private BackgroundWorker dataAcquisitionWorker;
+        private BackgroundWorker dataBackupWorker;
+        private BackgroundWorker dataBroadcastWorker;
+
         private CMcsUsbListNet usbList = new CMcsUsbListNet(); // TODO understand MCS black magic.
         private CMcsUsbListEntryNet usb = null; // TODO understand MCS black magic.
         private CMeaDeviceNet device = null; // TODO understand MCS black magic.
@@ -37,10 +41,113 @@ namespace MeaDataAcquisition
         private int udpClientPort = 40005;
         private string udpClientHostname = IPAddress.Broadcast.ToString();
 
+
         public Form()
         {
             InitializeComponent();
+            InitializeDataAcquisitionWorker();
+            InitializeDataBackupWorker();
+            InitializeDataBroadcastWorker();
         }
+
+
+        // Set up DataAcquisitionWorker object by attaching event handlers.
+        private void InitializeDataAcquisitionWorker()
+        {
+            this.dataAcquisitionWorker = new BackgroundWorker();
+            this.dataAcquisitionWorker.DoWork += new DoWorkEventHandler(dataAcquisitionWorker_DoWork);
+        }
+
+        // This event handler is where the data acquisition is done.
+        private void dataAcquisitionWorker_DoWork(object sender, DoWorkEventArgs e)
+        {
+            // Get the worker that raised this event.
+            var worker = sender as BackgroundWorker;
+            // ...
+            e.Result = AcquireData(worker, e);
+        }
+
+        private int AcquireData(BackgroundWorker worker, DoWorkEventArgs e)
+        {
+            var result = 0;
+            
+            // TODO understand MCS black magic.
+            device.SetSelectedData(selected_channels, queue_size, threshold, sample_size, channels_in_block);
+            // Update the number of acquired buffers.
+            buf_acq_nb = 0;
+            // Update the display of the number of acquired buffers.
+            textBoxBufferAcquired.Text = buf_acq_nb.ToString();
+            // Start the data acquisition thread and sampling.
+            var timeout = 150; // ms
+            var numSubmittedUsbBuffers = 100;
+            var numUsbBuffers = 300;
+            var packetsInUrb = 8;
+            device.StartDacq(timeout, numSubmittedUsbBuffers, numUsbBuffers, packetsInUrb);
+            //device.StartDacq();
+
+            while (true)
+            {
+                if (worker.CancellationPending)
+                {
+                    // Abort the operation if the user has canceled.
+                    e.Cancel = true;
+                    break;
+                }
+                else
+                {
+                    // TODO acquire data.
+                    throw new NotImplementedException();
+                }
+            }
+            return result;
+        }
+
+
+        // Set up DataBackupWorker object by attaching event handlers.
+        private void InitializeDataBackupWorker()
+        {
+            this.dataBackupWorker = new BackgroundWorker();
+            this.dataBackupWorker.DoWork += new DoWorkEventHandler(dataBackupWorker_DoWork);
+        }
+
+        // This event handler is where the data backup is done.
+        private void dataBackupWorker_DoWork(object sender, DoWorkEventArgs e)
+        {
+            // Get the worker that raised this event.
+            var worker = sender as BackgroundWorker;
+            // ...
+            e.Result = BackupData(worker, e);
+        }
+
+        private object BackupData(BackgroundWorker worker, DoWorkEventArgs e)
+        {
+            // TODO complete.
+            throw new NotImplementedException();
+        }
+
+
+        // Set up DataBroadcastWorker object by attaching event handlers.
+        private void InitializeDataBroadcastWorker()
+        {
+            this.dataBroadcastWorker = new BackgroundWorker();
+            this.dataBroadcastWorker.DoWork += new DoWorkEventHandler(dataBroadcastWorker_DoWork);
+        }
+
+        // This event handler is where the data broadcast is done.
+        private void dataBroadcastWorker_DoWork(object sender, DoWorkEventArgs e)
+        {
+            // Get the worker that raised this event.
+            var worker = sender as BackgroundWorker;
+            // ...
+            e.Result = BroadcastData(worker, e);
+        }
+
+        private object BroadcastData(BackgroundWorker worker, DoWorkEventArgs e)
+        {
+            // TODO complete.
+            throw new NotImplementedException();
+        }
+
 
         // Occurs whenever the user loads the form.
         private void Form_Load(object sender, EventArgs e)
@@ -157,48 +264,91 @@ namespace MeaDataAcquisition
             buttonDataAcquisitionStart.Enabled = true;
         }
 
+        // TODO remove member function for the old DLL version.
+        //void ChannelDataCallback(CMcsUsbDacqNet UsbDacq, int cb_handle, int num_frames)
+        //{
+        //    // Read raw data.
+        //    var handle = 0;
+        //    var frames = buf_size;
+        //    int frames_ret;
+        //    ushort[] channelData = device.ChannelBlock_ReadFramesUI16(handle, frames, out frames_ret);
+        //    // or
+        //    // ushort[] buffer = null;
+        //    // int frames_pos = 0;
+        //    // device.ChannelBlock_ReadFramesUI16(handle, buffer, frames_pos, frames, out frames_ret);
+        //    // Update the number of acquired buffers.
+        //    buf_acq_nb = buf_acq_nb + 1;
+        //    // Update the display of the number of acquired buffers.
+        //    textBoxBufferAcquired.Text = buf_acq_nb.ToString();
+        //    // Save raw data.
+        //    if (backupEnabled)
+        //    {
+        //        for (var i = 0; i < channelData.Length; i++)
+        //        {
+        //            dataBackupWriter.Write(channelData[i]);
+        //            // TODO use one delegate?
+        //        }
+        //        // Update the number of backuped buffers.
+        //        buf_bck_nb = buf_bck_nb + 1;
+        //        // Update the display of the number of backuped buffers.
+        //        textBoxBufferBackuped.Text = buf_bck_nb.ToString();
+        //    }
+        //    // Send raw data.
+        //    if (broadcastEnabled)
+        //    {
+        //        var method = new SendChannelDataDelegate(SendChannelData);
+        //        var arguments = new object[1];
+        //        arguments[0] = channelData;
+        //        BeginInvoke(method, arguments);
+        //        // Update the number of broadcasted buffers.
+        //        buf_brd_nb = buf_brd_nb + 1;
+        //        // Update the display of the number of broadcasted buffers.
+        //        textBoxBufferBroadcasted.Text = buf_brd_nb.ToString();
+        //    }
+        //}
+
+        // TODO polish member function for the new DLL version.
         void ChannelDataCallback(CMcsUsbDacqNet UsbDacq, int cb_handle, int num_frames)
         {
-            // Read raw data.
-            var handle = 0;
+            // Acquire raw data.
+            int handle;
+            // TODO understand MCS black magic.
+            handle = 0;
+            var channelEntry = 0;
+            int totalChannels;
+            int offset;
+            int channels;
+            device.ChannelBlock_GetChannel(handle, channelEntry, out totalChannels, out offset, out channels);
+            // TODO understand MCS black magic.
+            handle = 0;
             var frames = buf_size;
             int frames_ret;
-            ushort[] channelData = device.ChannelBlock_ReadFramesUI16(handle, frames, out frames_ret);
-            // or
-            // ushort[] buffer = null;
-            // int frames_pos = 0;
-            // device.ChannelBlock_ReadFramesUI16(handle, buffer, frames_pos, frames, out frames_ret);
+            ushort[] data = device.ChannelBlock_ReadFramesUI16(handle, frames, out frames_ret);
             // Update the number of acquired buffers.
             buf_acq_nb = buf_acq_nb + 1;
             // Update the display of the number of acquired buffers.
             textBoxBufferAcquired.Text = buf_acq_nb.ToString();
-            // Save raw data.
+            // TODO understand MCS black magic.
+            //for (int i = 0; i < totalChannels; i++)
+            //{
+            //    ushort[] data_tmp = new ushort[frames_ret];
+            //    for (int j = 0; j < frames_ret; j++)
+            //    {
+            //        data_tmp[j] = data[j * channels_in_block + i];
+            //    }
+            //}
+            // Backup raw data.
             if (backupEnabled)
             {
-                for (var i = 0; i < channelData.Length; i++)
-                {
-                    dataBackupWriter.Write(channelData[i]);
-                    // TODO use one delegate?
-                }
-                // Update the number of backuped buffers.
-                buf_bck_nb = buf_bck_nb + 1;
-                // Update the display of the number of backuped buffers.
-                textBoxBufferBackuped.Text = buf_bck_nb.ToString();
+                throw new NotImplementedException();
             }
-            // Send raw data.
+            // Broadcast raw data.
             if (broadcastEnabled)
             {
-                var method = new SendChannelDataDelegate(SendChannelData);
-                var arguments = new object[1];
-                arguments[0] = channelData;
-                BeginInvoke(method, arguments);
-                // Update the number of broadcasted buffers.
-                buf_brd_nb = buf_brd_nb + 1;
-                // Update the display of the number of broadcasted buffers.
-                textBoxBufferBroadcasted.Text = buf_brd_nb.ToString();
+                throw new NotImplementedException();
             }
         }
-
+        
         private delegate void SendChannelDataDelegate(ushort[] channelData);
 
         private void SendChannelData(ushort[] channelData)
@@ -235,19 +385,9 @@ namespace MeaDataAcquisition
             textBoxQueueSize.Enabled = false;
             textBoxThreshold.Enabled = false;
             buttonDataAcquisitionStart.Enabled = false;
-            // TODO understand MCS black magic.
-            device.SetSelectedData(selected_channels, queue_size, threshold, sample_size, channels_in_block);
-            // Update the number of acquired buffers.
-            buf_acq_nb = 0;
-            // Update the display of the number of acquired buffers.
-            textBoxBufferAcquired.Text = buf_acq_nb.ToString();
-            // Start the data acquisition thread and sampling.
-            var timeout = 150; // ms
-            var numSubmittedUsbBuffers = 100;
-            var numUsbBuffers = 300;
-            var packetsInUrb = 5;
-            device.StartDacq(timeout, numSubmittedUsbBuffers, numUsbBuffers, packetsInUrb);
-            //device.StartDacq()
+            // Start asynchronously the data acquisition operation.
+            dataAcquisitionWorker.RunWorkerAsync();
+            //dataAcquisitionWorker.RunWorkerAsync(argument);
             // Enable controls.
             buttonStop.Enabled = true;
             groupBoxDataBackup.Enabled = true;
