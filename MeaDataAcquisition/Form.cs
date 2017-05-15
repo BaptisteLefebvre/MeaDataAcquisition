@@ -15,8 +15,9 @@ namespace MeaDataAcquisition
         private BackgroundWorker dataBackupWorker;
         private BackgroundWorker dataBroadcastWorker;
 
-        private BlockingCollection<ushort[]> dataBackupBuffer = new BlockingCollection<ushort[]>();
-        private BlockingCollection<ushort[]> dataBroadcastBuffer = new BlockingCollection<ushort[]>();
+        private static int boundedCapacity = 250; // number of buffers (buffer size = 1 MB)
+        private BlockingCollection<ushort[]> dataBackupBuffer = new BlockingCollection<ushort[]>(boundedCapacity);
+        private BlockingCollection<ushort[]> dataBroadcastBuffer = new BlockingCollection<ushort[]>(boundedCapacity);
 
         private CMcsUsbListNet usbList = new CMcsUsbListNet(); // TODO understand MCS black magic.
         private CMcsUsbListEntryNet usb = null; // TODO understand MCS black magic.
@@ -73,11 +74,11 @@ namespace MeaDataAcquisition
             var result = 0;
             
             // TODO understand MCS black magic.
-            this.device.SetSelectedData(selected_channels, queue_size, threshold, sample_size, channels_in_block);
+            this.device.SetSelectedData(this.selected_channels, this.queue_size, this.threshold, this.sample_size, this.channels_in_block);
             // Update the number of acquired buffers.
-            buf_acq_nb = 0;
+            this.buf_acq_nb = 0;
             // Update the display of the number of acquired buffers.
-            textBoxBufferAcquired.Text = buf_acq_nb.ToString();
+            this.textBoxBufferAcquired.Text = this.buf_acq_nb.ToString();
             // Start the data acquisition thread and sampling.
             //var timeout = 150; // ms
             //var numSubmittedUsbBuffers = 100;
@@ -85,7 +86,7 @@ namespace MeaDataAcquisition
             //var packetsInUrb = 8;
             //this.device.StartDacq(timeout, numSubmittedUsbBuffers, numUsbBuffers, packetsInUrb);
             // TODO ask MCS to know and understand the default values of the parameters for the data acquisition.
-            device.StartDacq();
+            this.device.StartDacq();
             
             while (true)
             {
@@ -100,7 +101,7 @@ namespace MeaDataAcquisition
                     catch (CUsbExceptionNet cUsbExceptionNet)
                     {
                         // Log exception.
-                        textBoxLog.Text += cUsbExceptionNet.ToString() + "\r\n";
+                        this.textBoxLog.Text += cUsbExceptionNet.ToString() + "\r\n";
                     }
                     e.Cancel = true;
                     break;
@@ -116,7 +117,7 @@ namespace MeaDataAcquisition
         {
             this.dataBackupWorker = new BackgroundWorker();
             this.dataBackupWorker.WorkerSupportsCancellation = true;
-            this.dataBackupWorker.DoWork += new DoWorkEventHandler(dataBackupWorker_DoWork);
+            this.dataBackupWorker.DoWork += new DoWorkEventHandler(this.dataBackupWorker_DoWork);
         }
 
         // This event handler is where the data backup is done.
@@ -125,7 +126,7 @@ namespace MeaDataAcquisition
             // Get the worker that raised this event.
             var worker = sender as BackgroundWorker;
             // ...
-            e.Result = BackupData(worker, e);
+            e.Result = this.BackupData(worker, e);
         }
 
         // TODO add docstring.
@@ -138,7 +139,7 @@ namespace MeaDataAcquisition
             // Update the display of the number of broadcasted buffers.
             this.textBoxBufferAcquired.Text = buf_bck_nb.ToString();
             // Create backup file.
-            var dataBackupFile = File.Open(dataBackupFilename, FileMode.Create);
+            var dataBackupFile = File.Open(this.dataBackupFilename, FileMode.Create);
             // Create backup writer.
             var dataBackupWriter = new BinaryWriter(dataBackupFile);
 
@@ -146,12 +147,29 @@ namespace MeaDataAcquisition
             {
                 if (worker.CancellationPending)
                 {
+                    // TODO remove following line.
+                    this.textBoxLog.Text += this.dataBackupBuffer.Count + " items remain in the backup queue.\r\n";
+                    // Empty backup buffer.
+                    while (this.dataBackupBuffer.Count > 0)
+                    {
+                        // TODO merge first occurence of duplicated code.
+                        ushort[] data = this.dataBackupBuffer.Take();
+                        var bytes_nb = 2 * data.Length;
+                        byte[] buffer = new byte[bytes_nb];
+                        Buffer.BlockCopy(data, 0, buffer, 0, bytes_nb);
+                        dataBackupWriter.Write(buffer);
+                        // Update the number of backuped buffers.
+                        buf_bck_nb = buf_bck_nb + 1;
+                        // Update the display of the number of backuped buffers.
+                        this.textBoxBufferBackuped.Text = buf_bck_nb.ToString();
+                    }
                     e.Cancel = true;
                     break;
                 }
                 else
                 {
-                    ushort[] data = dataBackupBuffer.Take();
+                    // TODO merge second occurence of duplicated code.
+                    ushort[] data = this.dataBackupBuffer.Take();
                     var bytes_nb = 2 * data.Length;
                     byte[] buffer = new byte[bytes_nb];
                     Buffer.BlockCopy(data, 0, buffer, 0, bytes_nb);
@@ -215,6 +233,36 @@ namespace MeaDataAcquisition
             {
                 if (worker.CancellationPending)
                 {
+                    // TODO remove following line.
+                    this.textBoxLog.Text += this.dataBroadcastBuffer.Count + " items remain in the broadcast queue.\r\n";
+                    // Empty broadcast buffer.
+                    while (this.dataBroadcastBuffer.Count > 0)
+                    {
+                        // TODO merge first occurence of duplicated code.
+                        // Retrieve data.
+                        ushort[] data = this.dataBroadcastBuffer.Take();
+                        // Write data to stream.
+                        var nb_bytes = 2 * data.Length;
+                        this.textBoxLog.Text += nb_bytes + " bytes\r\n"; // TODO remove.
+                        var buffer = new byte[nb_bytes];
+                        Buffer.BlockCopy(data, 0, buffer, 0, nb_bytes);
+                        var offset = 0;
+                        var count = nb_bytes;
+                        try
+                        {
+                            stream.Write(buffer, offset, count);
+                        }
+                        catch (Exception exception)
+                        {
+                            this.textBoxLog.Text += "Exception\r\n";
+                            this.textBoxLog.Text += exception.ToString() + "\r\n";
+                        }
+                        // Update the number of broadcasted buffers.
+                        buf_brd_nb = buf_brd_nb + 1;
+                        // Update the display of the number of broadcasted buffers.
+                        this.textBoxBufferBroadcasted.Text = buf_brd_nb.ToString();
+                    }
+                    stream.Flush(); // TODO check if necessary.
                     tcpClient.Close();
                     tcpListener.Stop();
                     e.Cancel = true;
@@ -222,8 +270,9 @@ namespace MeaDataAcquisition
                 }
                 else
                 {
+                    // TODO merge second occurence of duplicated code.
                     // Retrieve data.
-                    ushort[] data = dataBroadcastBuffer.Take();
+                    ushort[] data = this.dataBroadcastBuffer.Take();
                     // Write data to stream.
                     var nb_bytes = 2 * data.Length;
                     this.textBoxLog.Text += nb_bytes + " bytes\r\n"; // TODO remove.
@@ -234,7 +283,6 @@ namespace MeaDataAcquisition
                     try
                     {
                         stream.Write(buffer, offset, count);
-                        //stream.Flush(); // TODO check performance.
                     }
                     catch (Exception exception)
                     {
@@ -255,116 +303,116 @@ namespace MeaDataAcquisition
         private void Form_Load(object sender, EventArgs e)
         {
             // Initialize the combo box which lists all the MEA devices.
-            ComboBoxMeaDevices_Initialize();
+            this.ComboBoxMeaDevices_Initialize();
             // Select the only one MEA device listed by the combo box (id possible).
             if (this.comboBoxMeaDevices.Items.Count == 1)
             {
                 this.comboBoxMeaDevices.SelectedIndex = 0;
             }
             // Initialize the text box which shows the hostname targeted by the UDP client.
-            TextBoxDataBroadcastHostname_Initialize();
+            this.TextBoxDataBroadcastHostname_Initialize();
             // Initialize the text box which shows the port used by the UDP client.
-            TextBoxDataBroadcastPort_Initialize();
+            this.TextBoxDataBroadcastPort_Initialize();
         }
         
         // Occurs when the drop-down portion of the combo box is shown.
         private void ComboBoxMeaDevices_DropDown(object sender, EventArgs e)
         {
-            ComboBoxMeaDevices_Initialize();
+            this.ComboBoxMeaDevices_Initialize();
         }
 
         // TODO add docstring.
         private void ComboBoxMeaDevices_Initialize()
         {
             // Clear all the MEA devices listed by the combo box.
-            comboBoxMeaDevices.Items.Clear();
+            this.comboBoxMeaDevices.Items.Clear();
             // TODO understand MCS black magic.
-            usbList.Initialize(DeviceEnumNet.MCS_MEA_DEVICE);
+            this.usbList.Initialize(DeviceEnumNet.MCS_MEA_DEVICE);
             // Add each MEA device to the combo box.
-            for (var i = 0; i < usbList.Count; i++)
+            for (var i = 0; i < this.usbList.Count; i++)
             {
                 var index = (uint) i;
-                var usbEntry = usbList.GetUsbListEntry(index);
+                var usbEntry = this.usbList.GetUsbListEntry(index);
                 var deviceName = usbEntry.DeviceName;
                 var serialNumber = usbEntry.SerialNumber;
                 var item = deviceName + " / " + serialNumber;
-                comboBoxMeaDevices.Items.Add(item);
+                this.comboBoxMeaDevices.Items.Add(item);
             }
         }
 
         // Occurs when the value of the selected index of the combo box (i.e. the seleted MEA device) changes.
         private void ComboBoxMeaDevices_SelectedIndexChanged(object sender, EventArgs e)
         {
-            var index = (uint) comboBoxMeaDevices.SelectedIndex;
+            var index = (uint)this.comboBoxMeaDevices.SelectedIndex;
             // TODO understand MCS black magic.
-            usb = usbList.GetUsbListEntry(index);
+            usb = this.usbList.GetUsbListEntry(index);
             // TODO understand MCS black magic.
-            device = new CMeaDeviceNet(usb.DeviceId.BusType, ChannelDataCallback, ErrorCallback);
+            this.device = new CMeaDeviceNet(usb.DeviceId.BusType, ChannelDataCallback, ErrorCallback);
             // Establish a connection to the required DAQ device.
-            device.Connect(usb);
+            this.device.Connect(usb);
             // TODO understand MCS black magic.
-            device.SendStop();
+            this.device.SendStop();
             // TODO understand MCS black magic.
-            var hardwareInfo = device.HWInfo();
+            var hardwareInfo = this.device.HWInfo();
             // Get the number of available analog hardware channels.
             hardwareInfo.GetNumberOfHWADCChannels(out nb_channels);
             // Set the number of analog hardware channels to the maximum.
-            device.SetNumberOfChannels(nb_channels);
+            this.device.SetNumberOfChannels(nb_channels);
             // Update the text box which displays the number of analog hardware channels.
-            textBoxNumberOfChannels.Text = nb_channels.ToString();
+            this.textBoxNumberOfChannels.Text = nb_channels.ToString();
             // TODO understand MCS black magic.
             //hardwareInfo.GetAvailableSampleRates(out List<int> sample_rates);
-            sample_rate = 20000;
+            this.sample_rate = 20000;
             // TODO understand MCS black magic.
             var oversample = (uint) 1;
             var virtualDevice = 0;
-            device.SetSampleRate(sample_rate, oversample, virtualDevice);
-            textBoxSampleRate.Text = sample_rate.ToString();
+            this.device.SetSampleRate(sample_rate, oversample, virtualDevice);
+            this.textBoxSampleRate.Text = sample_rate.ToString();
             // TODO understand MCS black magic.
-            gain = device.GetGain();
-            textBoxGain.Text = gain.ToString();
+            gain = this.device.GetGain();
+            this.textBoxGain.Text = gain.ToString();
             // TODO understand MCS black magic.
             //hardwareInfo.GetAvailableVoltageRangesInMicroVoltAndStringsInMilliVolt(out List<CMcsUsbDacqNet.CHWInfo.CVoltageRangeInfoNet> voltage_ranges);
             //var voltage_range = 10;
             // TODO understand MCS black magic.
-            //device.SetVoltageRangeInMicroVolt(voltage_range);
+            //this.device.SetVoltageRangeInMicroVolt(voltage_range);
             // TODO understand MCS black magic.
-            device.EnableDigitalIn(true, virtualDevice);
+            this.device.EnableDigitalIn(true, virtualDevice);
             // TODO understand MCS black magic.
-            device.EnableChecksum(true, virtualDevice);
+            this.device.EnableChecksum(true, virtualDevice);
             // TODO understand MCS black magic.
-            //device.EnableTimestamp(false);
+            //this.device.EnableTimestamp(false);
             // TODO understand MCS black magic.
             int analog_channels;
             int digital_channels;
             int checksum_channels;
             int timestamp_channels;
-            device.GetChannelLayout(out analog_channels, out digital_channels, out checksum_channels, out timestamp_channels, out channels_in_block, (uint)virtualDevice);
-            channels_in_block = device.GetChannelsInBlock();
-            textBoxChannelsInBlock.Text = channels_in_block.ToString();
+            this.device.GetChannelLayout(out analog_channels, out digital_channels, out checksum_channels, out timestamp_channels, out this.channels_in_block, (uint)virtualDevice);
+            this.channels_in_block = this.device.GetChannelsInBlock();
+            this.textBoxChannelsInBlock.Text = this.channels_in_block.ToString();
             // ...
-            selected_channels = new bool[channels_in_block];
-            for (var i = 0; i < channels_in_block; i++)
+            this.selected_channels = new bool[this.channels_in_block];
+            for (var i = 0; i < this.channels_in_block; i++)
             {
-                selected_channels[i] = true;
+                this.selected_channels[i] = true;
             }
             // TODO check the value of the buffer size.
-            buf_size = sample_rate / 10;
-            //buf_size = sample_rate / 100;
-            queue_size = 20 * buf_size;
-            textBoxQueueSize.Text = queue_size.ToString();
+            this.buf_size = sample_rate / 10;
+            //this.buf_size = sample_rate / 100;
+            this.queue_size = 20 * this.buf_size;
+            this.textBoxQueueSize.Text = this.queue_size.ToString();
             // ...
-            threshold = buf_size;
-            textBoxThreshold.Text = threshold.ToString();
+            this.threshold = this.buf_size;
+            this.textBoxThreshold.Text = this.threshold.ToString();
             // ...
-            sample_size = SampleSizeNet.SampleSize16Unsigned;
-            textBoxSampleSize.Text = sample_size.ToString();
+            this.sample_size = SampleSizeNet.SampleSize16Unsigned;
+            this.textBoxSampleSize.Text = sample_size.ToString();
             // TODO understand MCS black magic.
-            device.ChannelBlock_SetCheckChecksum((uint)checksum_channels, (uint)timestamp_channels);
+            this.device.ChannelBlock_SetCheckChecksum((uint)checksum_channels, (uint)timestamp_channels);
             // Enable control.
-            textBoxQueueSize.Enabled = true;
-            textBoxThreshold.Enabled = true;
-            buttonDataAcquisitionStart.Enabled = true;
+            this.textBoxQueueSize.Enabled = true;
+            this.textBoxThreshold.Enabled = true;
+            this.buttonDataAcquisitionStart.Enabled = true;
         }
 
         // TODO polish member function for the new DLL version.
@@ -381,24 +429,24 @@ namespace MeaDataAcquisition
             device.ChannelBlock_GetChannel(handle, channelEntry, out totalChannels, out offset, out channels);
             // TODO understand MCS black magic.
             handle = 0;
-            var frames = buf_size;
+            var frames = this.buf_size;
             int frames_ret;
             ushort[] data = device.ChannelBlock_ReadFramesUI16(handle, frames, out frames_ret);
             // TODO remove the following line.
             //this.textBoxLog.Text += (2 * data.Length) + " bytes\r\n";
             // Update the number of acquired buffers.
-            buf_acq_nb = buf_acq_nb + 1;
+            this.buf_acq_nb = this.buf_acq_nb + 1;
             // Update the display of the number of acquired buffers.
-            textBoxBufferAcquired.Text = buf_acq_nb.ToString();
+            this.textBoxBufferAcquired.Text = this.buf_acq_nb.ToString();
             // Send data to backup if necessary.
-            if (dataBackupWorker.IsBusy)
+            if (this.dataBackupWorker.IsBusy && !this.dataBackupWorker.CancellationPending)
             {
-                dataBackupBuffer.Add(data);
+                this.dataBackupBuffer.Add(data);
             }
             // Send data to broadcast if necessary.
-            if (dataBroadcastWorker.IsBusy)
+            if (this.dataBroadcastWorker.IsBusy && !this.dataBroadcastWorker.CancellationPending)
             {
-                dataBroadcastBuffer.Add(data);
+               this.dataBroadcastBuffer.Add(data);
             }
         }
         
@@ -448,7 +496,7 @@ namespace MeaDataAcquisition
         private void ButtonDataBackupBrowse_Click(object sender, EventArgs e)
         {
             // Dialog to select file for backup.
-            SaveFileDialog dataBackupFileDialog = new SaveFileDialog();
+            var dataBackupFileDialog = new SaveFileDialog();
             // Default filename.
             dataBackupFileDialog.FileName = "data_backuped.raw";
             // Show backup file dialog box.
@@ -460,9 +508,9 @@ namespace MeaDataAcquisition
                 var filename = dataBackupFileDialog.FileName;
                 // TODO assert data backup filename is correct?
                 // Set data backup filename.
-                dataBackupFilename = filename;
+                this.dataBackupFilename = filename;
                 // Display backup filename.
-                textBoxDataBackupPath.Text = dataBackupFilename;
+                this.textBoxDataBackupPath.Text = this.dataBackupFilename;
             }
         }
 
@@ -470,9 +518,9 @@ namespace MeaDataAcquisition
         private void TextBoxDataBackupPath_TextChanged(object sender, EventArgs e)
         {
             // Retrieve filename.
-            var filename = textBoxDataBackupPath.Text;
+            var filename = this.textBoxDataBackupPath.Text;
             // TODO addset data backup filename is correct?
-            dataBackupFilename = filename;
+            this.dataBackupFilename = filename;
         }
 
         // Occurs when the 'Start' button of the 'Data backup' group is clicked.
