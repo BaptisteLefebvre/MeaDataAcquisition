@@ -67,6 +67,7 @@
             this.textBoxDataBroadcastHostname = new System.Windows.Forms.TextBox();
             this.labelDataBroadcastHostname = new System.Windows.Forms.Label();
             this.textBoxLog = new System.Windows.Forms.TextBox();
+            this.checkBoxLockBackupBroadcast = new System.Windows.Forms.CheckBox();
             this.groupBoxDataAcquisition.SuspendLayout();
             this.groupBoxDataBackup.SuspendLayout();
             this.groupBoxDataBroadcast.SuspendLayout();
@@ -484,11 +485,22 @@
             this.textBoxLog.Size = new System.Drawing.Size(405, 705);
             this.textBoxLog.TabIndex = 7;
             // 
+            // checkBoxLockBackupBroadcast
+            // 
+            this.checkBoxLockBackupBroadcast.AutoSize = true;
+            this.checkBoxLockBackupBroadcast.Location = new System.Drawing.Point(18, 619);
+            this.checkBoxLockBackupBroadcast.Name = "checkBoxLockBackupBroadcast";
+            this.checkBoxLockBackupBroadcast.Size = new System.Drawing.Size(156, 17);
+            this.checkBoxLockBackupBroadcast.TabIndex = 8;
+            this.checkBoxLockBackupBroadcast.Text = "lock backup and broadcast";
+            this.checkBoxLockBackupBroadcast.UseVisualStyleBackColor = true;
+            // 
             // Form
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(1008, 729);
+            this.Controls.Add(this.checkBoxLockBackupBroadcast);
             this.Controls.Add(this.textBoxLog);
             this.Controls.Add(this.groupBoxDataBroadcast);
             this.Controls.Add(this.groupBoxDataBackup);
@@ -547,6 +559,7 @@
         private System.Windows.Forms.Label labelBufferBroadcasted;
         private System.Windows.Forms.TextBox textBoxBufferBroadcasted;
         private System.Windows.Forms.TextBox textBoxLog;
+        private System.Windows.Forms.CheckBox checkBoxLockBackupBroadcast;
     }
 }
 

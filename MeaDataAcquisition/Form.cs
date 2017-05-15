@@ -67,7 +67,7 @@ namespace MeaDataAcquisition
             e.Result = AcquireData(worker, e);
         }
 
-        // TODO manage cancellation.
+        // TODO add docstring.
         private int AcquireData(BackgroundWorker worker, DoWorkEventArgs e)
         {
             var result = 0;
@@ -79,12 +79,13 @@ namespace MeaDataAcquisition
             // Update the display of the number of acquired buffers.
             textBoxBufferAcquired.Text = buf_acq_nb.ToString();
             // Start the data acquisition thread and sampling.
-            var timeout = 150; // ms
-            var numSubmittedUsbBuffers = 100;
-            var numUsbBuffers = 300;
-            var packetsInUrb = 8;
-            this.device.StartDacq(timeout, numSubmittedUsbBuffers, numUsbBuffers, packetsInUrb);
-            //device.StartDacq();
+            //var timeout = 150; // ms
+            //var numSubmittedUsbBuffers = 100;
+            //var numUsbBuffers = 300;
+            //var packetsInUrb = 8;
+            //this.device.StartDacq(timeout, numSubmittedUsbBuffers, numUsbBuffers, packetsInUrb);
+            // TODO ask MCS to know and understand the default values of the parameters for the data acquisition.
+            device.StartDacq();
             
             while (true)
             {
@@ -127,6 +128,7 @@ namespace MeaDataAcquisition
             e.Result = BackupData(worker, e);
         }
 
+        // TODO add docstring.
         private object BackupData(BackgroundWorker worker, DoWorkEventArgs e)
         {
             var result = 0;
@@ -182,6 +184,7 @@ namespace MeaDataAcquisition
             e.Result = BroadcastData(worker, e);
         }
 
+        // TODO add docstring.
         private int BroadcastData(BackgroundWorker worker, DoWorkEventArgs e)
         {
             var result = 0;
@@ -189,66 +192,62 @@ namespace MeaDataAcquisition
             // Update the number of broadcasted buffers.
             var buf_brd_nb = 0;
             // Update the display of the number of broadcasted buffer.
-            textBoxBufferAcquired.Text = buf_brd_nb.ToString();
-            // Create UDP client.
-            var udpClient = new UdpClient(udpClientPort);
-            // Adjust buffer size.
-            udpClient.Client.SendBufferSize = buf_size;
-            // TODO check if the previous line is valid.
-            // Connect to the requested host.
-            udpClient.Connect(udpClientIPAddress, udpClientPort);
+            this.textBoxBufferAcquired.Text = buf_brd_nb.ToString();
+            // Create TCP listener.
+            var address = IPAddress.Parse("192.168.10.100");
+            var port = 40006;
+            TcpListener tcpListener = new TcpListener(address, port);
+            //TcpListener tcpListener = new TcpListener(IPAddress.Any, port);
+            this.textBoxLog.Text += "The server will run at " + address + ":" + port + "\r\n"; // TODO remove.
+            // Start listenning.
+            tcpListener.Start();
+            this.textBoxLog.Text += "The server is running at " + tcpListener.LocalEndpoint + "\r\n"; // TODO remove.
+            this.textBoxLog.Text += "Waiting for a connection...\r\n"; // TODO remove.
+            // Accept connection.
+            TcpClient tcpClient = tcpListener.AcceptTcpClient();
+            this.textBoxLog.Text += "Connection accepted from " + tcpClient.Client.RemoteEndPoint + "\r\n"; // TODO remove.
+            // Set the send buffer size.
+            tcpClient.SendBufferSize = 261 * 2000 * 2;
+            // Get stream.
+            Stream stream = tcpClient.GetStream();
 
             while (true)
             {
                 if (worker.CancellationPending)
                 {
-                    // Close UDP client.
-                    udpClient.Close();
-                    // Destroy UDP client.
-                    udpClient = null;
-                    // TODO check if UDP client is correctly deleted.
-
+                    tcpClient.Close();
+                    tcpListener.Stop();
                     e.Cancel = true;
                     break;
                 }
                 else
                 {
+                    // Retrieve data.
                     ushort[] data = dataBroadcastBuffer.Take();
-                    var method = new SendChannelDataDelegate(SendChannelData);
-                    var arguments = new object[2];
-                    arguments[0] = udpClient;
-                    arguments[1] = data;
-                    BeginInvoke(method, arguments);
+                    // Write data to stream.
+                    var nb_bytes = 2 * data.Length;
+                    this.textBoxLog.Text += nb_bytes + " bytes\r\n"; // TODO remove.
+                    var buffer = new byte[nb_bytes];
+                    Buffer.BlockCopy(data, 0, buffer, 0, nb_bytes);
+                    var offset = 0;
+                    var count = nb_bytes;
+                    try
+                    {
+                        stream.Write(buffer, offset, count);
+                        //stream.Flush(); // TODO check performance.
+                    }
+                    catch (Exception exception)
+                    {
+                        this.textBoxLog.Text += "Exception\r\n";
+                        this.textBoxLog.Text += exception.ToString() + "\r\n";
+                    }
                     // Update the number of broadcasted buffers.
                     buf_brd_nb = buf_brd_nb + 1;
                     // Update the display of the number of broadcasted buffers.
-                    this.textBoxBufferBroadcasted.Text = buf_brd_nb.ToString();
+                    this.textBoxBufferBroadcasted.Text = buf_brd_nb.ToString();                }
                 }
-            }
 
-            return result;
-        }
-
-        private delegate void SendChannelDataDelegate(UdpClient udpClient, ushort[] data);
-
-        private void SendChannelData(UdpClient udpClient, ushort[] data)
-        {
-            // Send UDP datagram.
-            //var nb_bytes = 2 * data.Length;
-            var nb_bytes = 2 * 256;
-            // Log the size of the UDP datagram.
-            this.textBoxLog.Text += nb_bytes.ToString() + " bytes\r\n";
-            var datagram = new byte[nb_bytes];
-            Buffer.BlockCopy(data, 0, datagram, 0, nb_bytes);
-            try
-            {
-                udpClient.Send(datagram, nb_bytes);
-            }
-            catch (SocketException socketException)
-            {
-                this.textBoxLog.Text += "SocketException\r\n";
-                this.textBoxLog.Text += socketException.ToString() + "\r\n";
-            }
+                return result;
         }
 
 
@@ -274,6 +273,7 @@ namespace MeaDataAcquisition
             ComboBoxMeaDevices_Initialize();
         }
 
+        // TODO add docstring.
         private void ComboBoxMeaDevices_Initialize()
         {
             // Clear all the MEA devices listed by the combo box.
@@ -351,7 +351,7 @@ namespace MeaDataAcquisition
             // TODO check the value of the buffer size.
             buf_size = sample_rate / 10;
             //buf_size = sample_rate / 100;
-            queue_size = 10 * buf_size;
+            queue_size = 20 * buf_size;
             textBoxQueueSize.Text = queue_size.ToString();
             // ...
             threshold = buf_size;
@@ -384,6 +384,8 @@ namespace MeaDataAcquisition
             var frames = buf_size;
             int frames_ret;
             ushort[] data = device.ChannelBlock_ReadFramesUI16(handle, frames, out frames_ret);
+            // TODO remove the following line.
+            //this.textBoxLog.Text += (2 * data.Length) + " bytes\r\n";
             // Update the number of acquired buffers.
             buf_acq_nb = buf_acq_nb + 1;
             // Update the display of the number of acquired buffers.
@@ -400,44 +402,46 @@ namespace MeaDataAcquisition
             }
         }
         
+        // TODO add docstring.
         void ErrorCallback(string message, int action)
         {
             // throw new NotImplementedException();
-            textBoxLog.Text += "ErrorCallback\r\n";
-            textBoxLog.Text += message + "\r\n";
+            this.textBoxLog.Text += "ErrorCallback\r\n";
+            this.textBoxLog.Text += message + "\r\n";
         }
 
         // Occurs when the 'Start' button of the 'Data acquisition' group is clicked.
         private void ButtonDataAcquisitionStart_Click(object sender, EventArgs e)
         {
             // Disable controls.
-            comboBoxMeaDevices.Enabled = false;
-            textBoxQueueSize.Enabled = false;
-            textBoxThreshold.Enabled = false;
-            buttonDataAcquisitionStart.Enabled = false;
+            this.comboBoxMeaDevices.Enabled = false;
+            this.textBoxQueueSize.Enabled = false;
+            this.textBoxThreshold.Enabled = false;
+            this.buttonDataAcquisitionStart.Enabled = false;
             // Start asynchronously the data acquisition operation.
             this.dataAcquisitionWorker.RunWorkerAsync();
-            //dataAcquisitionWorker.RunWorkerAsync(argument);
             // Enable controls.
-            buttonStop.Enabled = true;
-            groupBoxDataBackup.Enabled = true;
-            groupBoxDataBroadcast.Enabled = true;
+            this.buttonStop.Enabled = true;
+            this.groupBoxDataBackup.Enabled = true;
+            this.groupBoxDataBroadcast.Enabled = true;
+            this.checkBoxLockBackupBroadcast.Enabled = true;
         }
 
         // Occurs when the 'Stop' button of the 'Data acquisition' group is clicked.
         private void ButtonDataAcquisitionStop_Click(object sender, EventArgs e)
         {
             // Disable controls.
-            groupBoxDataBroadcast.Enabled = false;
-            groupBoxDataBackup.Enabled = false;
-            buttonStop.Enabled = false;
+            this.checkBoxLockBackupBroadcast.Enabled = false;
+            this.groupBoxDataBroadcast.Enabled = false;
+            this.groupBoxDataBackup.Enabled = false;
+            this.buttonStop.Enabled = false;
             // Stop asynchronously the data acquisition operation.
             this.dataAcquisitionWorker.CancelAsync();
             // Enable controls.
-            buttonDataAcquisitionStart.Enabled = true;
-            textBoxThreshold.Enabled = true;
-            textBoxQueueSize.Enabled = true;
-            comboBoxMeaDevices.Enabled = true;
+            this.buttonDataAcquisitionStart.Enabled = true;
+            this.textBoxThreshold.Enabled = true;
+            this.textBoxQueueSize.Enabled = true;
+            this.comboBoxMeaDevices.Enabled = true;
         }
 
         // Occurs whe the 'Browse' button of the 'Data backup' group is clicked.
@@ -446,7 +450,7 @@ namespace MeaDataAcquisition
             // Dialog to select file for backup.
             SaveFileDialog dataBackupFileDialog = new SaveFileDialog();
             // Default filename.
-            dataBackupFileDialog.FileName = "data_backup.raw";
+            dataBackupFileDialog.FileName = "data_backuped.raw";
             // Show backup file dialog box.
             DialogResult dialogResult = dataBackupFileDialog.ShowDialog();
             // Process backup file dialog box results.
@@ -474,33 +478,62 @@ namespace MeaDataAcquisition
         // Occurs when the 'Start' button of the 'Data backup' group is clicked.
         private void ButtonDataBackupStart_Click(object sender, EventArgs e)
         {
-            // TODO assert data backup filename is correct(again)?
-            // Disable control.
-            buttonDataBackupStart.Enabled = false;
-            buttonDataBackupBrowse.Enabled = false;
+            // Disable controls.
+            this.buttonDataBackupStart.Enabled = false;
+            this.buttonDataBackupBrowse.Enabled = false;
+            this.checkBoxLockBackupBroadcast.Enabled = false;
+            if (this.checkBoxLockBackupBroadcast.Checked)
+            {
+                this.buttonDataBroadcastStart.Enabled = false;
+            }
             // Start asynchronously the data backup operation.
             this.dataBackupWorker.RunWorkerAsync();
-            // Enable control.
-            buttonDataBackupStop.Enabled = true;
+            // Start asynchronously the data broadcast operation if necessary.
+            if (this.checkBoxLockBackupBroadcast.Checked)
+            {
+                this.dataBroadcastWorker.RunWorkerAsync();
+            }
+            // Enable controls.
+            this.buttonDataBackupStop.Enabled = true;
+            if (this.checkBoxLockBackupBroadcast.Checked)
+            {
+                this.buttonDataBroadcastStop.Enabled = true;
+            }
         }
 
         // Occurs when the 'Stop' button of the 'Data backup' group is clicked.
         private void ButtonDataBackupStop_Click(object sender, EventArgs e)
         {
-            // Disable control.
-            buttonDataBackupStop.Enabled = false;
+            // Disable controls.
+            this.buttonDataBackupStop.Enabled = false;
+            if (this.checkBoxLockBackupBroadcast.Checked)
+            {
+                this.buttonDataBroadcastStop.Enabled = false;
+            }
             // Stop asynchronously the data backup operation.
             this.dataBackupWorker.CancelAsync();
-            // Enable control.
-            buttonDataBackupBrowse.Enabled = true;
-            buttonDataBackupStart.Enabled = true;
+            // Stop asynchronously the data broadcast operation if necessary.
+            if (this.checkBoxLockBackupBroadcast.Checked)
+            {
+                this.dataBroadcastWorker.CancelAsync();
+            }
+            // Enable controls.
+            this.buttonDataBackupBrowse.Enabled = true;
+            this.buttonDataBackupStart.Enabled = true;
+            if (this.checkBoxLockBackupBroadcast.Checked)
+            {
+                this.buttonDataBroadcastStart.Enabled = true;
+            }
+            this.checkBoxLockBackupBroadcast.Enabled = true;
         }
 
+        // TODO add docstring.
         private void TextBoxDataBroadcastHostname_Initialize()
         {
             textBoxDataBroadcastHostname.Text = udpClientHostname.ToString();
         }
 
+        // TODO add docstring.
         private void TextBoxDataBroadcastPort_Initialize()
         {
             textBoxDataBroadcastPort.Text = udpClientPort.ToString();
@@ -510,22 +543,52 @@ namespace MeaDataAcquisition
         private void ButtonDataBroadcastStart_Click(object sender, EventArgs e)
         {
             // Disable controls.
-            buttonDataBroadcastStart.Enabled = false;
+            this.buttonDataBroadcastStart.Enabled = false;
+            this.checkBoxLockBackupBroadcast.Enabled = false;
+            if (this.checkBoxLockBackupBroadcast.Enabled)
+            {
+                this.buttonDataBackupStart.Enabled = false;
+                this.buttonDataBackupBrowse.Enabled = false;
+            }
             // Start asynchronously the data broadcast operation.
             this.dataBroadcastWorker.RunWorkerAsync();
-            // Enable control.
-            buttonDataBroadcastStop.Enabled = true;
+            // Start asynchronously the data backup operation if necessary.
+            if (this.checkBoxLockBackupBroadcast.Enabled)
+            {
+                this.dataBackupWorker.RunWorkerAsync();
+            }
+            // Enable controls.
+            this.buttonDataBroadcastStop.Enabled = true;
+            if (this.checkBoxLockBackupBroadcast.Enabled)
+            {
+                this.buttonDataBackupStop.Enabled = true;
+            }
         }
 
         // Occurs when the 'Stop' button of the 'Data broadcast' group is clicked.
         private void ButtonDataBroadcastStop_Click(object sender, EventArgs e)
         {
-            // Disable control.
-            buttonDataBroadcastStop.Enabled = false;
+            // Disable controls.
+            this.buttonDataBroadcastStop.Enabled = false;
+            if (this.checkBoxLockBackupBroadcast.Checked)
+            {
+                this.buttonDataBackupStop.Enabled = false;
+            }
             // Stop asynchronously the data broadcast operation.
             this.dataBroadcastWorker.CancelAsync();
+            // Stop asynchronously the data backup operation if necessary.
+            if (this.checkBoxLockBackupBroadcast.Checked)
+            {
+                this.dataBackupWorker.CancelAsync();
+            }
             // Enable controls.
-            buttonDataBroadcastStart.Enabled = true;
+            this.buttonDataBroadcastStart.Enabled = true;
+            if (this.checkBoxLockBackupBroadcast.Checked)
+            {
+                this.buttonDataBackupBrowse.Enabled = true;
+                this.buttonDataBackupStart.Enabled = true;
+            }
+            this.checkBoxLockBackupBroadcast.Enabled = true;
         }
 
         // Occurs when the 'Queue size' text box is no longer active.
