@@ -37,9 +37,10 @@ namespace MeaDataAcquisition
 
         private string dataBackupFilename = null;
 
-        private int udpClientPort = 40005;
+        private int udpClientPort = 40006;
         private string udpClientHostname = IPAddress.Broadcast.ToString();
-        private IPAddress udpClientIPAddress = IPAddress.Parse("192.168.10.101");
+        private IPAddress udpClientIPAddress = IPAddress.Parse("192.168.0.253");
+        private TcpClient tcpClient = new TcpClient();
 
 
         public Form()
@@ -212,22 +213,23 @@ namespace MeaDataAcquisition
             // Update the display of the number of broadcasted buffer.
             this.textBoxBufferAcquired.Text = buf_brd_nb.ToString();
             // Create TCP listener.
-            var address = IPAddress.Parse("192.168.10.100");
+            var address = IPAddress.Parse("192.168.0.253");
             var port = 40006;
             TcpListener tcpListener = new TcpListener(address, port);
             //TcpListener tcpListener = new TcpListener(IPAddress.Any, port);
-            this.textBoxLog.Text += "The server will run at " + address + ":" + port + "\r\n"; // TODO remove.
+            this.textBoxLog.Text += "The server will run at " + address + ":" + port + "\r\n";
             // Start listenning.
             tcpListener.Start();
-            this.textBoxLog.Text += "The server is running at " + tcpListener.LocalEndpoint + "\r\n"; // TODO remove.
+            this.textBoxLog.Text += "The server is running at " + tcpListener.LocalEndpoint + "\r\n";
             this.textBoxLog.Text += "Waiting for a connection...\r\n"; // TODO remove.
             // Accept connection.
-            TcpClient tcpClient = tcpListener.AcceptTcpClient();
-            this.textBoxLog.Text += "Connection accepted from " + tcpClient.Client.RemoteEndPoint + "\r\n"; // TODO remove.
+            tcpClient = tcpListener.AcceptTcpClient();
+            this.textBoxLog.Text += "Connection accepted from " + tcpClient.Client.RemoteEndPoint + "\r\n";
             // Set the send buffer size.
             tcpClient.SendBufferSize = 261 * 2000 * 2;
             // Get stream.
             Stream stream = tcpClient.GetStream();
+            this.textBoxLog.Text += "Start broadcasting data...";
 
             while (true)
             {
@@ -243,7 +245,8 @@ namespace MeaDataAcquisition
                         ushort[] data = this.dataBroadcastBuffer.Take();
                         // Write data to stream.
                         var nb_bytes = 2 * data.Length;
-                        this.textBoxLog.Text += nb_bytes + " bytes\r\n"; // TODO remove.
+                        // TODO remove the following line.
+                        // this.textBoxLog.Text += nb_bytes + " bytes\r\n";
                         var buffer = new byte[nb_bytes];
                         Buffer.BlockCopy(data, 0, buffer, 0, nb_bytes);
                         var offset = 0;
@@ -275,7 +278,8 @@ namespace MeaDataAcquisition
                     ushort[] data = this.dataBroadcastBuffer.Take();
                     // Write data to stream.
                     var nb_bytes = 2 * data.Length;
-                    this.textBoxLog.Text += nb_bytes + " bytes\r\n"; // TODO remove.
+                    // TODO remove the following line.
+                    // this.textBoxLog.Text += nb_bytes + " bytes\r\n";
                     var buffer = new byte[nb_bytes];
                     Buffer.BlockCopy(data, 0, buffer, 0, nb_bytes);
                     var offset = 0;
@@ -292,10 +296,13 @@ namespace MeaDataAcquisition
                     // Update the number of broadcasted buffers.
                     buf_brd_nb = buf_brd_nb + 1;
                     // Update the display of the number of broadcasted buffers.
-                    this.textBoxBufferBroadcasted.Text = buf_brd_nb.ToString();                }
+                    this.textBoxBufferBroadcasted.Text = buf_brd_nb.ToString();
                 }
+            }
 
-                return result;
+            this.textBoxLog.Text += "Stop broadcasting data.";
+            
+            return result;
         }
 
 
@@ -439,13 +446,14 @@ namespace MeaDataAcquisition
             // Update the display of the number of acquired buffers.
             this.textBoxBufferAcquired.Text = this.buf_acq_nb.ToString();
             // Send data to backup if necessary.
-            if (this.dataBackupWorker.IsBusy && !this.dataBackupWorker.CancellationPending)
+            if (this.dataBackupWorker.IsBusy && (!this.checkBoxLockBackupBroadcast.Checked || tcpClient.Connected) && !this.dataBackupWorker.CancellationPending)
             {
                 this.dataBackupBuffer.Add(data);
             }
             // Send data to broadcast if necessary.
-            if (this.dataBroadcastWorker.IsBusy && !this.dataBroadcastWorker.CancellationPending)
+            if (this.dataBroadcastWorker.IsBusy && tcpClient.Connected && !this.dataBroadcastWorker.CancellationPending)
             {
+                // TODO modify the condition (i.e. #.IsBusy -> #.IsBusyAndAcceptedConnection)
                this.dataBroadcastBuffer.Add(data);
             }
         }
