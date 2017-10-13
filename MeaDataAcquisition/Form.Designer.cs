@@ -150,9 +150,9 @@
             this.labelBufferAcquired.Enabled = false;
             this.labelBufferAcquired.Location = new System.Drawing.Point(8, 292);
             this.labelBufferAcquired.Name = "labelBufferAcquired";
-            this.labelBufferAcquired.Size = new System.Drawing.Size(79, 13);
+            this.labelBufferAcquired.Size = new System.Drawing.Size(84, 13);
             this.labelBufferAcquired.TabIndex = 18;
-            this.labelBufferAcquired.Text = "Buffer acquired";
+            this.labelBufferAcquired.Text = "Buffers acquired";
             // 
             // labelSampleSize
             // 
@@ -319,9 +319,9 @@
             this.labelBufferBackuped.Enabled = false;
             this.labelBufferBackuped.Location = new System.Drawing.Point(8, 101);
             this.labelBufferBackuped.Name = "labelBufferBackuped";
-            this.labelBufferBackuped.Size = new System.Drawing.Size(86, 13);
+            this.labelBufferBackuped.Size = new System.Drawing.Size(91, 13);
             this.labelBufferBackuped.TabIndex = 20;
-            this.labelBufferBackuped.Text = "Buffer backuped";
+            this.labelBufferBackuped.Text = "Buffers backuped";
             // 
             // textBoxBufferBackuped
             // 
@@ -406,9 +406,9 @@
             this.labelBufferBroadcasted.Enabled = false;
             this.labelBufferBroadcasted.Location = new System.Drawing.Point(8, 127);
             this.labelBufferBroadcasted.Name = "labelBufferBroadcasted";
-            this.labelBufferBroadcasted.Size = new System.Drawing.Size(97, 13);
+            this.labelBufferBroadcasted.Size = new System.Drawing.Size(102, 13);
             this.labelBufferBroadcasted.TabIndex = 21;
-            this.labelBufferBroadcasted.Text = "Buffer broadcasted";
+            this.labelBufferBroadcasted.Text = "Buffers broadcasted";
             // 
             // textBoxBufferBroadcasted
             // 
@@ -490,9 +490,9 @@
             this.checkBoxLockBackupBroadcast.AutoSize = true;
             this.checkBoxLockBackupBroadcast.Location = new System.Drawing.Point(18, 619);
             this.checkBoxLockBackupBroadcast.Name = "checkBoxLockBackupBroadcast";
-            this.checkBoxLockBackupBroadcast.Size = new System.Drawing.Size(156, 17);
+            this.checkBoxLockBackupBroadcast.Size = new System.Drawing.Size(160, 17);
             this.checkBoxLockBackupBroadcast.TabIndex = 8;
-            this.checkBoxLockBackupBroadcast.Text = "lock backup and broadcast";
+            this.checkBoxLockBackupBroadcast.Text = "Lock backup and broadcast";
             this.checkBoxLockBackupBroadcast.UseVisualStyleBackColor = true;
             // 
             // Form
