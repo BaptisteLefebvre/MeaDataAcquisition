@@ -229,7 +229,7 @@ namespace MeaDataAcquisition
             tcpClient.SendBufferSize = 261 * 2000 * 2;
             // Get stream.
             Stream stream = tcpClient.GetStream();
-            this.textBoxLog.Text += "Start broadcasting data...";
+            this.textBoxLog.Text += "Start broadcasting data...\r\n";
 
             while (true)
             {
@@ -300,7 +300,7 @@ namespace MeaDataAcquisition
                 }
             }
 
-            this.textBoxLog.Text += "Stop broadcasting data.";
+            this.textBoxLog.Text += "Stop broadcasting data.\r\n";
             
             return result;
         }
